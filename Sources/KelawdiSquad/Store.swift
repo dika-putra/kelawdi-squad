@@ -37,6 +37,8 @@ final class Store: ObservableObject {
     @Published private(set) var defaultName = "Default"
     @Published private(set) var profiles: [Profile] = []
     @Published private(set) var runningPIDs: [String: pid_t] = [:]
+    @Published private(set) var update: (version: String, url: URL)?
+    private var lastUpdateCheck = Date.distantPast
 
     private let configDir = appSupport.appendingPathComponent("ClaudeProfileSwitcher")
     private var configFile: URL { configDir.appendingPathComponent("profiles.json") }
@@ -130,6 +132,8 @@ final class Store: ObservableObject {
             for step in done.reversed() { try? fm.moveItem(at: step.to, to: step.from) }
             return "Swap failed and was rolled back: \(error.localizedDescription)"
         }
+        movePaths(in: a, from: b.path, to: a.path)
+        movePaths(in: b, from: a.path, to: b.path)
         let old = defaultName
         defaultName = profiles[i].name
         profiles[i].name = old
@@ -170,7 +174,7 @@ final class Store: ObservableObject {
         } catch {
             return "Restore failed: \(error.localizedDescription)"
         }
-        rewritePaths(in: dest, from: b.sourceDir, to: dest.path)
+        movePaths(in: dest, from: b.sourceDir, to: dest.path)
         return nil
     }
 
@@ -185,17 +189,38 @@ final class Store: ObservableObject {
         guard cp.terminationStatus == 0 else { throw CocoaError(.fileWriteUnknown) }
     }
 
-    // Session files store the absolute path of the folder they were created in (e.g. scratch workspaces).
-    private func rewritePaths(in dest: URL, from old: String, to new: String) {
+    // Session files store the absolute path of the folder they were created in (e.g. scratch workspaces), and Claude
+    // Code keeps each session's transcript in ~/.claude/projects/<cwd with every non-alphanumeric as "-">. When the
+    // data moves from old to new, both are moved too, or the session shows a bare scratch-<date> folder and cannot resume.
+    // The trailing "/" keeps ".../Claude" from matching ".../Claude-<id>".
+    private func movePaths(in dest: URL, from old: String, to new: String) {
         guard old != new else { return }
         let fm = FileManager.default
         var files = [dest.appendingPathComponent("git-worktrees.json")]
         if let e = fm.enumerator(at: dest.appendingPathComponent("claude-code-sessions"), includingPropertiesForKeys: nil) {
             files += e.compactMap { $0 as? URL }.filter { $0.pathExtension == "json" }
         }
+        let projects = fm.homeDirectoryForCurrentUser.appendingPathComponent(".claude/projects")
+        func key(_ path: String) -> String { String(path.map { $0.isASCII && ($0.isLetter || $0.isNumber) ? $0 : "-" }) }
         for f in files {
-            guard let text = try? String(contentsOf: f, encoding: .utf8), text.contains(old) else { continue }
-            try? text.replacingOccurrences(of: old, with: new).write(to: f, atomically: true, encoding: .utf8)
+            guard let text = try? String(contentsOf: f, encoding: .utf8), text.contains(old + "/") else { continue }
+            if let obj = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any],
+               let cwd = obj["cwd"] as? String, cwd.hasPrefix(old + "/") {
+                let from = projects.appendingPathComponent(key(cwd))
+                let to = projects.appendingPathComponent(key(new + cwd.dropFirst(old.count)))
+                // Claude Code shortens names over 200 characters in a way not copied here; those transcripts stay put.
+                if to.lastPathComponent.count <= 200, fm.fileExists(atPath: from.path), !fm.fileExists(atPath: to.path) {
+                    try? fm.moveItem(at: from, to: to)
+                }
+            }
+            try? text.replacingOccurrences(of: old + "/", with: new + "/").write(to: f, atomically: true, encoding: .utf8)
+        }
+    }
+
+    // Repairs sessions that still point into another profile's folder, e.g. after a Make default from 0.1.4 or older.
+    private func repairPaths(of p: Profile) {
+        for q in all where q.id != p.id {
+            movePaths(in: dataDir(p), from: dataDir(q).path, to: dataDir(p).path)
         }
     }
 
@@ -261,6 +286,7 @@ final class Store: ObservableObject {
             return
         }
         guard let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: claudeBundleID) else { return }
+        repairPaths(of: p)
         let cfg = NSWorkspace.OpenConfiguration()
         // Always a new instance: if another profile is running, macOS would otherwise just focus it.
         cfg.createsNewApplicationInstance = true
@@ -280,6 +306,21 @@ final class Store: ObservableObject {
             eventClass: AEEventClass(kCoreEventClass), eventID: AEEventID(kAEReopenApplication),
             targetDescriptor: target, returnID: AEReturnID(kAutoGenerateReturnID), transactionID: AETransactionID(kAnyTransactionID))
         AESendMessage(event.aeDesc, nil, AESendMode(kAENoReply), kAEDefaultTimeout)
+    }
+
+    // Asks GitHub for the latest release at most every 6 hours. Only shows a link; the user downloads and installs.
+    func checkForUpdate() {
+        guard !demo, Date().timeIntervalSince(lastUpdateCheck) > 6 * 3600,
+              let current = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String else { return }
+        lastUpdateCheck = Date()
+        struct Release: Decodable { let tag_name: String; let html_url: URL }
+        let api = URL(string: "https://api.github.com/repos/dika-putra/kelawdi-squad/releases/latest")!
+        URLSession.shared.dataTask(with: api) { data, _, _ in
+            guard let data, let r = try? JSONDecoder().decode(Release.self, from: data) else { return }
+            let latest = r.tag_name.hasPrefix("v") ? String(r.tag_name.dropFirst()) : r.tag_name
+            guard latest.compare(current, options: .numeric) == .orderedDescending else { return }
+            DispatchQueue.main.async { self.update = (latest, r.html_url) }
+        }.resume()
     }
 
     private func load() {
