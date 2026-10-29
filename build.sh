@@ -23,7 +23,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <key>CFBundleIconFile</key><string>AppIcon</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleVersion</key><string>$BUILD</string>
-<key>CFBundleShortVersionString</key><string>0.1.4</string>
+<key>CFBundleShortVersionString</key><string>0.1.5</string>
 <key>LSMinimumSystemVersion</key><string>14.0</string>
 <key>LSUIElement</key><true/>
 <key>NSAppleEventsUsageDescription</key><string>Brings a minimized Claude window back when you click Show.</string>
