@@ -68,14 +68,15 @@ One backup per Claude account, not one per removal. The backup key is the accoun
 - If the copy fails, the profile and its data are not deleted.
 - Backups from the first version (folders named `<name>-<id>-<date>`) are not recognized and were not migrated. Copy them by hand with `cp -R <backup>/. <profile folder>/`.
 
-Restore: Manage > Restore > pick an account backup. Requirements: the target profile has been opened once and its Claude is closed. The app merges the backup into the profile folder and then rewrites absolute paths of the old folder (taken from `info.json`) inside the session files to the target path.
+Restore: Manage > Restore > pick an account backup. Requirements: the target profile has been opened once and its Claude is closed. The app merges the backup into the profile folder and then rewrites absolute paths of the old folder (taken from `info.json`) inside the session files to the target path, and moves the matching transcript folder under `~/.claude/projects`.
 Proven (manual restore, 2026-10-17): the Code session list reappears in a new profile. Not proven: restore through the button, and sessions that worked in a scratch workspace.
 
 ## Make default
 
 Default = the account that opens when Claude is started from Spotlight or the Dock = the contents of the `Claude` folder. Moving it means swapping folders: `Claude` -> `Claude-swap-tmp`, `Claude-<id>` -> `Claude`, `Claude-swap-tmp` -> `Claude-<id>`, then swapping the names of the two profiles so each name keeps following its account. If a step fails, the earlier steps are rolled back. It is refused when any Claude process is running, when a leftover `Claude-swap-tmp` exists, or when the target profile has never been opened (its folder does not exist).
 Tested by the user on 2026-10-18 and it worked.
-Risks: if the app is interrupted between the renames, `Claude` can be missing while the data sits in `Claude-swap-tmp` (nothing is lost, but it must be renamed back by hand). Code sessions that used a scratch workspace store the absolute path of the old folder.
+Risks: if the app is interrupted between the renames, `Claude` can be missing while the data sits in `Claude-swap-tmp` (nothing is lost, but it must be renamed back by hand).
+Code sessions that used a scratch workspace store the absolute path of their folder, and Claude Code keeps their transcripts in `~/.claude/projects/<that path with non-alphanumerics as "-">`. After the swap, both are moved to the new folder. Up to 0.1.4 they were not, so sessions showed a bare `scratch-<date>` folder and could not resume (issue #1); launching a profile from the popup repairs those. Transcript folder names over 200 characters are not moved (Claude Code shortens them in a way the app does not copy).
 
 ## Stack and decisions
 
@@ -94,6 +95,8 @@ Decision log:
   - Restore for scratch-workspace sessions stays a documented limitation.
   - Notarization: not now. Revisit if several outside users are blocked by the macOS warning.
   - Start at login: added, default off, through `SMAppService.mainApp` (`LoginItem.swift`). Tested by the author on 2026-10-22: it works for the ad-hoc signed build installed in the Applications folder. If macOS refuses, the popup shows the error.
+- 2026-10-29: apps that use the Claude Code login (for example OpenBot, which reads `~/.claude.json` and the `Claude Code-credentials` Keychain entry) see one account for every profile: the last one that signed in to Claude Code. Out of scope; separating it would need a `CLAUDE_CONFIG_DIR` per profile.
+- 2026-10-29: the popup checks the latest GitHub release (at most every 6 hours) and shows a download link when it is newer. No automatic install, because the app is not notarized.
 - 2026-10-18: the repository is public under the MIT license. Releases ship as a DMG, ad-hoc signed and not notarized (see Distribution).
 
 Structure:

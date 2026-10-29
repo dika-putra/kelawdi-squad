@@ -312,14 +312,15 @@ final class Store: ObservableObject {
     func checkForUpdate() {
         guard !demo, Date().timeIntervalSince(lastUpdateCheck) > 6 * 3600,
               let current = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String else { return }
-        lastUpdateCheck = Date()
         struct Release: Decodable { let tag_name: String; let html_url: URL }
         let api = URL(string: "https://api.github.com/repos/dika-putra/kelawdi-squad/releases/latest")!
         URLSession.shared.dataTask(with: api) { data, _, _ in
             guard let data, let r = try? JSONDecoder().decode(Release.self, from: data) else { return }
             let latest = r.tag_name.hasPrefix("v") ? String(r.tag_name.dropFirst()) : r.tag_name
-            guard latest.compare(current, options: .numeric) == .orderedDescending else { return }
-            DispatchQueue.main.async { self.update = (latest, r.html_url) }
+            DispatchQueue.main.async {
+                self.lastUpdateCheck = Date()
+                if latest.compare(current, options: .numeric) == .orderedDescending { self.update = (latest, r.html_url) }
+            }
         }.resume()
     }
 
