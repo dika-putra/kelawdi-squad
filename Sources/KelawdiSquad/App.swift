@@ -132,6 +132,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         anchor = window.frame
         anchorScreen = window.screen
         store.refreshRunning()
+        store.checkForUpdate()
         resize()
         NSApp.activate(ignoringOtherApps: true)
         panel.makeKeyAndOrderFront(nil)

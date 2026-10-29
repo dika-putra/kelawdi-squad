@@ -36,6 +36,10 @@ struct ContentView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             header
+            if let u = store.update {
+                Link(destination: u.url) { Label("Update available: v\(u.version). Download", systemImage: "arrow.down.circle") }
+                    .font(.callout)
+            }
             VStack(spacing: 6) {
                 ForEach(store.all) { p in row(p) }
             }

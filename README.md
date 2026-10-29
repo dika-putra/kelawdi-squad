@@ -49,6 +49,7 @@ To remove those too, delete that folder. The `Claude-<id>` folders (one per extr
 - **Restore** puts a saved Code session history back into any profile.
 - **Start at login** is a switch at the bottom of the popup. It is off by default.
 - The popup header shows the version and build id (for example `v0.1.4 (014197d)`). Include it in bug reports.
+- When a newer release is on GitHub, the popup shows a download link. Installing it is up to you.
 
 ## Why use it
 
